@@ -1,19 +1,36 @@
 'use strict';
 
+const argv = require('minimist')(process.argv.slice(2))
+
+if(argv.child_process && argv.child_process !== module.filename) {
+  return require(argv.child_process)()
+}
+
 const http = require('http')
 const zlib = require('zlib')
+const fork = require('child_process').fork
 
-const HttpProxyServer = require('http-proxy/lib/http-proxy/').Server
+const HttpProxyServer = require('http-proxy')
 const uglifyJs = require('uglify-js')
 const cleanCss = require('clean-css')
 const icepick = require('icepick')
 
 const proxy = new HttpProxyServer({})
 
+require('./uglify')
+
 const toMinify = [
   {
     contentType: 'application/javascript',
-    minify: (data) => Promise.resolve(uglifyJs.minify(data.toString('utf8'), { fromString: true }))
+    minify: (data) => {
+      return new Promise( (resolve, reject) => {
+        const proc = fork('./uglify')
+        proc.send(data.toString('utf8'))
+        let result = []
+        proc.on('message', (r) => result = result.concat(r))
+        proc.on('close', (code) => code === 0 ? resolve(result.join('')) : reject() )
+      })
+    }
   }, {
     contentType: 'text/css',
     minify: (data) => Promise.resolve(data)
@@ -46,16 +63,14 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
       if(args.length) data = data.concat(args[0])
       if(processing[req.url]) return
       processing = icepick.assign(processing, { [req.url]: true })
-      console.log(`Minifying data with ${match.minify}`)
       match.minify(Buffer.concat(data))
-        .then( ({ code: minified }) => {
+        .then( (minified) => {
           console.log('Data minified.')
-          console.log(minified)
           zlib.gzip(minified, (err, compressed) => {
             console.log('Data compressed.')
             cache = icepick.assign(cache, {
               [req.url]: {
-                headers: res._headers,
+                headers: icepick.unset(res._headers, 'content-length'),
                 statusCode: res.statusCode,
                 compressedData: compressed,
                 uncompressedData: minified
@@ -75,11 +90,11 @@ function send(req, res, cacheObj) {
     res.writeHead(cacheObj.statusCode, icepick.assign(cacheObj.headers, { 'content-encoding': 'gzip' }))
     res.write(cacheObj.compressedData)
   } else {
-    console.dir(Object.keys(cacheObj))
     res.writeHead(cacheObj.statusCode, icepick.unset(cacheObj.headers, 'content-encoding'))
     res.write(cacheObj.uncompressedData)
   }
   res.end()
+  console.log('Response ended.')
 }
 
 const server = http.createServer( (req, res) => {
