@@ -6,6 +6,7 @@ module.exports = function cleanCssProcess() {
 
   process.on('message', (data) => {
     cleanCss.minify(data, (err, minified) => {
+      if(err) process.exit(1)
       process.send(minified.styles, () => process.exit(0))
     })
   })
