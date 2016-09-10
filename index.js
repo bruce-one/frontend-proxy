@@ -18,22 +18,28 @@ const icepick = require('icepick')
 const proxy = new HttpProxyServer({})
 
 require('./uglify')
+require('./cleanCss')
+
+function getForkMinified(moduleName) {
+  return function forkMinified(data) {
+    return new Promise( (resolve, reject) => {
+      console.log('Forking ' + moduleName)
+      const proc = fork(moduleName)
+      proc.send(data.toString('utf8'))
+      let result = []
+      proc.on('message', (r) => result = result.concat(r))
+      proc.on('close', (code) => code === 0 ? resolve(result.join('')) : reject() )
+    })
+  }
+}
 
 const toMinify = [
   {
     contentType: 'application/javascript',
-    minify: (data) => {
-      return new Promise( (resolve, reject) => {
-        const proc = fork('./uglify')
-        proc.send(data.toString('utf8'))
-        let result = []
-        proc.on('message', (r) => result = result.concat(r))
-        proc.on('close', (code) => code === 0 ? resolve(result.join('')) : reject() )
-      })
-    }
+    minify: getForkMinified('./uglify')
   }, {
     contentType: 'text/css',
-    minify: (data) => Promise.resolve(data)
+    minify: getForkMinified('./cleanCss')
   }
 ]
 
