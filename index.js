@@ -117,6 +117,7 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
         })
     }
   } else if( acceptEncoding && !!~acceptEncoding.indexOf('gzip') && !contentEncoding ) {
+    debug('Compressing proxy response.')
     const _write = res.write
     const _end = res.end
     const gzip = zlib.createGzip()
