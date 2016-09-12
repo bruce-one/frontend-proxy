@@ -93,6 +93,7 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
         return
       }
       const processingKey = Symbol(req.url)
+      const processingDate = new Date()
       processing = icepick.set(processing, req.url, processingKey)
       const dataBuffer = Buffer.concat(data)
       const dataPromise = toUncompress
@@ -110,8 +111,10 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
               headers: icepick.unset(proxyRes.headers, 'content-encoding'),
               statusCode: res.statusCode,
               compressedData: compressed,
-              uncompressedData: minified
+              uncompressedData: minified,
+              processedDate: processingDate
             })
+            debug('Cache set.')
             processing = icepick.unset(processing, req.url)
           })
         })
@@ -132,14 +135,21 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
 })
 
 function send(req, res, cacheObj) {
+  const modifiedSince = req.headers['if-modified-since']
+  const lastModifiedDate = cacheObj.processedDate.toUTCString()
+  if( modifiedSince && new Date(modifiedSince).getTime() >= cacheObj.processedDate.getTime() ) {
+    debug('Sending 304.')
+    res.writeHead(304, { 'last-modified': lastModifiedDate })
+    return res.end()
+  }
   const acceptEncoding = req.headers['accept-encoding']
   if( acceptEncoding && !!~acceptEncoding.indexOf('gzip') ) {
     debug(`Cache hit for ${req.url} for compressed data.`)
-    res.writeHead(cacheObj.statusCode, icepick.set(cacheObj.headers, 'content-encoding', 'gzip'))
+    res.writeHead(cacheObj.statusCode, icepick.assign(cacheObj.headers, { 'content-encoding': 'gzip', 'last-modified': lastModifiedDate }))
     res.write(cacheObj.compressedData)
   } else {
     debug(`Cache hit for ${req.url} for uncompressed data.`)
-    res.writeHead(cacheObj.statusCode, cacheObj.headers)
+    res.writeHead(cacheObj.statusCode, icepick.set(cacheObj.headers, 'last-modified', lastModifiedDate))
     res.write(cacheObj.uncompressedData)
   }
   res.end()
