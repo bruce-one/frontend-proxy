@@ -51,8 +51,14 @@ const toMinify = [
   }
 ]
 
-let cache = {}
-let processing = {}
+let cache = Object.freeze({})
+let processing = Object.freeze({})
+
+process.on('SIGUSR2', () => {
+  console.log('Clearing the cache.')
+  cache = Object.freeze({})
+  processing = Object.freeze({})
+})
 
 process.on('uncaughtException', (err) => { throw err })
 proxy.on('proxyRes', (proxyRes, req, res) => {
@@ -83,7 +89,8 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
         debug(`${req.url} is already processing.`)
         return
       }
-      processing = icepick.set(processing, req.url, true)
+      const processingKey = Symbol(req.url)
+      processing = icepick.set(processing, req.url, processingKey)
       const dataBuffer = Buffer.concat(data)
       const dataPromise = toUncompress
         ? new Promise( (resolve, reject) => zlib.unzip(dataBuffer, (err, result) => err ? reject(err) : resolve(result)))
@@ -94,6 +101,7 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
         .then( (minified) => {
           debug('Data minified.')
           zlib.gzip(minified, (err, compressed) => {
+            if(processing[req.url] !== processingKey) return
             debug('Data compressed.')
             cache = icepick.set(cache, req.url, {
               headers: icepick.unset(proxyRes.headers, 'content-encoding'),
