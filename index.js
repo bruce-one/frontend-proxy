@@ -81,6 +81,7 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
     const _write = res.write
     const _end = res.end
     let data = []
+    const time = process.hrtime()
     res.write = (d) => {
       data = data.concat(d)
       _write.call(res, d)
@@ -104,7 +105,7 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
         .then(match.minify)
         .then( (minified) => {
           debug('Data minified.')
-          zlib.gzip(minified, (err, compressed) => {
+          zlib.gzip(minified, { level: parseInt(process.env.GZIP_LEVEL) || zlib.Z_BEST_COMPRESSION, memLevel: parseInt(process.env.GZIP_MEMORY_LEVEL) || zlib.Z_BEST_COMPRESSION }, (err, compressed) => {
             if(processing[req.url] !== processingKey) return
             debug('Data compressed.')
             cache = icepick.set(cache, req.url, {
@@ -114,7 +115,10 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
               uncompressedData: minified,
               processedDate: processingDate
             })
-            debug('Cache set.')
+            const duration = process.hrtime(time)
+            const nanoseconds = duration[0] * 1e9 + duration[1]
+            const milliseconds = Math.round(nanoseconds * 1e-6)
+            debug(`Cache set for "${req.url}", which took ${nanoseconds} nanoseconds (about ${milliseconds} milliseconds) to receive, minify, and compress.`)
             processing = icepick.unset(processing, req.url)
           })
         })
@@ -169,7 +173,7 @@ pem.createCertificate({ days: 365, selfSigned: true }, (err, keys) => {
         const duration = process.hrtime(time)
         const nanoseconds = duration[0] * 1e9 + duration[1]
         const milliseconds = Math.round(nanoseconds * 1e-6)
-        debug(`Request processed in ${nanoseconds} nanoseconds (about ${milliseconds} millisecond${milliseconds === 1 ? '' : 's'}).`)
+        debug(`Request for "${req.url}" processed in ${nanoseconds} nanoseconds (about ${milliseconds} millisecond${milliseconds === 1 ? '' : 's'}).`)
       }
     }
     if(cache[req.url]) {
