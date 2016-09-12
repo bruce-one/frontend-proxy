@@ -3,7 +3,13 @@
 const argv = require('minimist')(process.argv.slice(2))
 
 if(argv.child_process && argv.child_process !== module.filename) {
-  return require(argv.child_process)()
+  return require(argv.child_process)
+}
+
+const dummyToForceIncludeForBundle = false
+if(dummyToForceIncludeForBundle) {
+  require('./uglify')
+  require('./cleanCss')
 }
 
 const http = require('http')
@@ -24,9 +30,6 @@ const proxy = new HttpProxyServer({
   hostRewrite: true,
   protocolRewrite: 'https',
 })
-
-require('./uglify')
-require('./cleanCss')
 
 function getForkMinified(moduleName) {
   return function forkMinified(data) {
