@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "nexe -p python2 -i index.js"
+    "build": "nexe -p ${PYTHON:-python2} -i index.js",
+    "docker-build": "docker run --rm -ti -v $(pwd):/vagrant -e PYTHON=python -e CCACHE=${CCACHE:-true} -e CCACHE_DIR='/vagrant/cache' frontend-proxy",
+    "build-docker-container": "docker build -t frontend-proxy - < Dockerfile-build"
   },
   "author": "",
   "license": "ISC",

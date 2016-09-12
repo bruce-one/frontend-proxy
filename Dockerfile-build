@@ -1,11 +1,10 @@
-FROM centos:6.7
+FROM phusion/holy-build-box-64
 
-RUN yum groupinstall -y 'Development Tools'
-RUN yum install -y tar xz
-RUN curl https://people.centos.org/tru/devtools-2/devtools-2.repo -o /etc/yum.repos.d/devtools-2.repo
-RUN yum install -y devtoolset-2-gcc devtoolset-2-binutils devtoolset-2-gcc-c++
-RUN curl https://nodejs.org/dist/v6.5.0/node-v6.5.0-linux-x64.tar.xz -o /tmp/node-v6.5.0-linux-x64.tar.xz && ( cd /opt && tar xvJf /tmp/node-v6.5.0-linux-x64.tar.xz ; ) && rm /tmp/node-v6.5.0-linux-x64.tar.xz
+RUN curl https://nodejs.org/dist/v6.5.0/node-v6.5.0-linux-x64.tar.gz -o /tmp/node-v6.5.0-linux-x64.tar.gz && ( cd /opt && tar xvzf /tmp/node-v6.5.0-linux-x64.tar.gz ; ) && rm /tmp/node-v6.5.0-linux-x64.tar.gz
+
+RUN { echo '[ "x$CCACHE" = xtrue ] || return' ; echo ' [ -d /vagrant/cache ] || mkdir /vagrant/cache' ; echo 'export CC="ccache gcc" CXX="ccache g++" CCACHE_DIR="/vagrant/cache"' ; } > /ccache.sh
 
 VOLUME /vagrant
 
-CMD cd /vagrant ; exec env PATH="/opt/rh/devtoolset-2/root/usr/bin:/opt/node-v6.5.0-linux-x64/bin:${PATH}" npm run build
+ENV PYTHON python
+CMD source /hbb_exe/activate ; cd /vagrant ; source /ccache.sh ; env PATH="/opt/node-v6.5.0-linux-x64/bin:${PATH}" npm run build && strip --strip-all out.nex
