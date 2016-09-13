@@ -17,7 +17,7 @@ const zlib = require('zlib')
 const fork = require('child_process').fork
 
 const spdy = require('spdy')
-const HttpProxyServer = require('http-proxy')
+const HttpProxyServer = require('http-proxy/lib/http-proxy/').Server
 const uglifyJs = require('uglify-js')
 const cleanCss = require('clean-css')
 const icepick = require('icepick')
