@@ -21,6 +21,7 @@ const HttpProxyServer = require('http-proxy/lib/http-proxy/').Server
 const uglifyJs = require('uglify-js')
 const cleanCss = require('clean-css')
 const icepick = require('icepick')
+const omit = require('object.omit')
 const through = require('through')
 const pem = require('pem')
 const debug = require('debug')('frontend-proxy')
@@ -65,8 +66,7 @@ process.on('SIGUSR2', () => {
 
 process.on('uncaughtException', (err) => { throw err })
 proxy.on('proxyRes', (proxyRes, req, res) => {
-  delete proxyRes.headers['transfer-encoding']
-  delete proxyRes.headers['content-length']
+  proxyRes.headers = omit(proxyRes.headers, [ 'transfer-encoding', 'content-length', 'pragma', 'expires', 'cache-control' ])
   const contentEncoding = proxyRes.headers['content-encoding']
   const toUncompress = contentEncoding === 'gzip' || contentEncoding === 'deflate'
   if(contentEncoding != null && contentEncoding !== 'identity' && toUncompress === false) {
@@ -94,7 +94,6 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
         return
       }
       const processingKey = Symbol(req.url)
-      const processingDate = new Date()
       processing = icepick.set(processing, req.url, processingKey)
       const dataBuffer = Buffer.concat(data)
       const dataPromise = toUncompress
@@ -107,13 +106,15 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
           debug('Data minified.')
           zlib.gzip(minified, { level: parseInt(process.env.GZIP_LEVEL) || zlib.Z_BEST_COMPRESSION, memLevel: parseInt(process.env.GZIP_MEMORY_LEVEL) || zlib.Z_BEST_COMPRESSION }, (err, compressed) => {
             if(processing[req.url] !== processingKey) return
+            const processedDateStr = new Date().toUTCString()
             debug('Data compressed.')
             cache = icepick.set(cache, req.url, {
+              processedDateStr,
               headers: icepick.unset(proxyRes.headers, 'content-encoding'),
               statusCode: res.statusCode,
               compressedData: compressed,
               uncompressedData: minified,
-              processedDate: processingDate
+              processedDate: new Date(processedDateStr).getTime(), // floors the date ms consistently with the header parsing
             })
             const duration = process.hrtime(time)
             const nanoseconds = duration[0] * 1e9 + duration[1]
@@ -140,8 +141,9 @@ proxy.on('proxyRes', (proxyRes, req, res) => {
 
 function send(req, res, cacheObj) {
   const modifiedSince = req.headers['if-modified-since']
-  const lastModifiedDate = cacheObj.processedDate.toUTCString()
-  if( modifiedSince && new Date(modifiedSince).getTime() >= cacheObj.processedDate.getTime() ) {
+  const lastModifiedDate = cacheObj.processedDateStr
+  if(modifiedSince) debug('Testing modifiedSince header %s against processed date %s', modifiedSince, lastModifiedDate)
+  if( modifiedSince && new Date(modifiedSince).getTime() >= cacheObj.processedDate ) {
     debug('Sending 304.')
     res.writeHead(304, { 'last-modified': lastModifiedDate })
     return res.end()
